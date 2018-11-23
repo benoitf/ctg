@@ -10,7 +10,7 @@
 
 import * as path from 'path';
 import { Exec } from './exec';
-
+import { Logger } from './logger';
 /**
  * Handle the parsing of node packages with Yarn.
  * It allows to grab direct dependencies (not the dev dependencies)
@@ -22,12 +22,15 @@ export class Yarn {
 
     public static readonly YARN_GET_CONFIG = 'yarn config current --json';
 
-    constructor(readonly rootFolder: string, private readonly dependenciesDirectory: string) { }
+    constructor(readonly rootFolder: string,
+        private readonly dependenciesDirectory: string,
+        private readonly forbiddenPackages: string[],
+        private readonly excludedPackages: string[]) { }
 
     /**
      * Get package.json dependency paths (not including dev dependencies)
      */
-    public async getDependencies(): Promise<string[]> {
+    public async getDependencies(rootModule: string): Promise<string[]> {
 
         // grab output of the command
         const exec = new Exec(this.dependenciesDirectory);
@@ -41,7 +44,7 @@ export class Yarn {
         }
 
         // parse array into JSON
-        const inputTrees = JSON.parse(match[1]);
+        const inputTrees: IYarnNode[] = JSON.parse(match[1]);
 
         // Get node_modules folder
         const configStdout = await exec.run(Yarn.YARN_GET_CONFIG);
@@ -62,12 +65,78 @@ export class Yarn {
 
         // add each yarn node (and loop through children of children)
         const nodePackages: INodePackage[] = [];
-        inputTrees.forEach((yarnNode: IYarnNode) => this.addNodePackage(nodeModulesFolder, yarnNode, nodePackages));
 
-        // return uniq entries
+        const nodeTreeDependencies = new Map<string, string[]>();
+
+        inputTrees.map(yarnNode => this.insertNode(yarnNode, nodeTreeDependencies));
+
+        // now, capture only expected dependencies
+        const subsetDependencies: string[] = [];
+        const initNode = nodeTreeDependencies.get(rootModule);
+        if (!initNode) {
+            throw new Error(`The initial module ${rootModule} was not found in dependencies`);
+        }
+        this.findDependencies(initNode!, nodeTreeDependencies, subsetDependencies);
+        subsetDependencies.forEach(moduleName => this.addNodePackage(nodeModulesFolder, moduleName, nodePackages));
+
+        // return unique entries
         return Promise.resolve(nodePackages.map((e) => e.path).filter((value, index, array) => {
             return index === array.indexOf(value);
         }));
+    }
+
+    protected findDependencies(children: string[], nodeTreeDependencies: Map<string, string[]>, subsetDependencies: string[]): void {
+        children.map(child => {
+            // only loop on exist
+            if (subsetDependencies.indexOf(child) < 0) {
+                subsetDependencies.push(child);
+
+                // loop on children in any
+                let depChildren = nodeTreeDependencies.get(child);
+                if (depChildren) {
+                    depChildren = depChildren.filter(depChild => {
+                        const res = this.excludedPackages.indexOf(depChild) < 0;
+                        if (!res) {
+                            Logger.debug(` --> Excluding the dependency ${depChild}`);
+                        }
+                        return res;
+                    });
+
+                    const matching: string[] = [];
+                    const foundForbiddenPackage = depChildren.some(r => {
+                        const res = this.forbiddenPackages.indexOf(r) >= 0;
+                        if (res) {
+                            matching.push(r);
+                        }
+                        return res;
+                    });
+                    if (foundForbiddenPackage) {
+                        throw new Error(`Forbidden dependencies ${matching} has been found as dependencies of ${child}` +
+                            `Current dependencies: ${depChildren}, excluded list: ${this.forbiddenPackages}`);
+                    }
+                    this.findDependencies(depChildren, nodeTreeDependencies, subsetDependencies);
+                }
+            }
+        });
+    }
+
+    protected insertNode(yarnNode: IYarnNode, nodeTreeDependencies: Map<string, string[]>): void {
+        const npmModuleName = yarnNode.name.substring(0, yarnNode.name.lastIndexOf('@'));
+
+        // check if already exists ?
+        let dependencies = nodeTreeDependencies.get(npmModuleName);
+        if (!dependencies) {
+            dependencies = [];
+            nodeTreeDependencies.set(npmModuleName, dependencies);
+        }
+
+        yarnNode.children.map(child => {
+            const childName = child.name.substring(0, child.name.lastIndexOf('@'));
+            if (dependencies!.indexOf(childName) < 0) {
+                dependencies!.push(childName);
+            }
+
+        });
     }
 
     /**
@@ -77,20 +146,10 @@ export class Yarn {
      * @param yarnNode the node entry to add
      * @param packages the array representing all node dependencies
      */
-    protected async addNodePackage(nodeModulesFolder: string, yarnNode: IYarnNode, packages: INodePackage[]): Promise<void> {
-
-        // add each child to the array again
-        if (yarnNode.children) {
-            yarnNode.children.forEach((child) => {
-                this.addNodePackage(nodeModulesFolder, child, packages);
-            });
-        }
-
-        // extract the node module name
-        const npmModuleName = yarnNode.name.substring(0, yarnNode.name.lastIndexOf('@'));
+    protected async addNodePackage(nodeModulesFolder: string, moduleName: string, packages: INodePackage[]): Promise<void> {
 
         // build package
-        const nodePackage = { name: npmModuleName, path: path.resolve(nodeModulesFolder, npmModuleName) };
+        const nodePackage = { name: moduleName, path: path.resolve(nodeModulesFolder, moduleName) };
 
         // add to the array
         packages.push(nodePackage);

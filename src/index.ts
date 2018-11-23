@@ -46,8 +46,8 @@ const commandArgs = yargs
         describe: 'Copy Theia to a production directory',
         handler: async () => {
             try {
-                const rootFolder = path.resolve(process.cwd(), 'examples/assembly');
-                const production = new Production(rootFolder);
+                const assemblyFolder = path.resolve(process.cwd(), 'examples/assembly');
+                const production = new Production(process.cwd(), assemblyFolder);
                 await production.create();
             } catch (err) {
                 handleError(err);

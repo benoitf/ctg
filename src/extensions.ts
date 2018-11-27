@@ -9,18 +9,30 @@
 **********************************************************************/
 import * as jsYaml from 'js-yaml';
 import * as path from 'path';
-import * as utilAsync from './async';
-import * as childProcess from 'child_process';
+import * as fs from 'fs-extra';
 import * as readPkg from 'read-pkg';
+import { Logger } from './logger';
+import { Repository } from './repository';
 
 /**
- * Init all extensions into packages folder
+ * Init all extensions by cloning them, creating symlinks, update package.json, etc.
  * @author Florent Benoit
  */
 export class Extensions {
 
+    /**
+     * Prefix for extensions.
+     */
+    public static readonly PREFIX_PACKAGES_EXTENSIONS = '@che-';
+
+    /**
+     * Set of global dependencies
+     */
     private globalDevDependencies = new Map<string, string>();
 
+    /**
+     * Constructor
+     */
     constructor(readonly rootFolder: string, readonly packagesFolder: string, readonly cheTheiaFolder: string, readonly assemblyFolder: string, readonly theiaVersion: string) {
 
     }
@@ -28,14 +40,11 @@ export class Extensions {
     /**
      * Install all extensions
      */
-    async generate(): Promise<void> {
-
-        const confDir = path.resolve(__dirname, '../src/conf');
-
-        const extensionsYamlContent = await utilAsync.FS.readFile(path.join(confDir, 'extensions.yml'));
+    async generate(extensionsPath: string): Promise<void> {
+        const extensionsYamlContent = await fs.readFile(extensionsPath);
         const extensionsYaml = jsYaml.load(extensionsYamlContent.toString());
-
         await this.initGlobalDependencies();
+        await fs.ensureDir(this.cheTheiaFolder);
 
         await Promise.all(extensionsYaml.extensions.map(async (extension: IExtension) => {
             await this.addExtension(extension);
@@ -43,6 +52,9 @@ export class Extensions {
 
     }
 
+    /**
+     * Scan package.json file and grab all dev dependencies and store them in globalDevDependencies variable
+     */
     async initGlobalDependencies(): Promise<void> {
         const extensionPackage: any = await readPkg(path.join(this.rootFolder, 'package.json'), { normalize: false });
 
@@ -52,11 +64,15 @@ export class Extensions {
         }));
     }
 
+    /**
+     * Adds an extension to the current theia
+     * @param extension the extension to add
+     */
     async addExtension(extension: IExtension): Promise<void> {
 
         // first, clone
-        console.log(`Cloning ${extension.source}...`);
-        this.clone(extension);
+        Logger.info(`Cloning ${extension.source}...`);
+        await this.clone(extension);
 
         // perform symlink
         await this.symlink(extension);
@@ -68,7 +84,9 @@ export class Extensions {
 
     }
 
-    // now perform update of devDependencies or dependencies
+    /**
+     * perform update of devDependencies or dependencies in package.json file of the cloned extension
+     */
     async updateDependencies(extension: IExtension): Promise<void> {
 
         await Promise.all(extension.symbolicLinks.map(async symbolicLink => {
@@ -97,7 +115,7 @@ export class Extensions {
 
             // write again the file
             const json = JSON.stringify(rawExtensionPackage, undefined, 2);
-            await utilAsync.FS.writeFile(extensionJsonPath, json);
+            await fs.writeFile(extensionJsonPath, json);
 
         }));
     }
@@ -125,8 +143,8 @@ export class Extensions {
     }
 
     /**
-     *
-     * @param extension Insert the given extension into the package.json of the assembly
+     * Insert the given extension into the package.json of the assembly.
+     * @param extension the given extension
      */
     async insertExtensionIntoAssembly(extension: IExtension) {
 
@@ -145,7 +163,7 @@ export class Extensions {
             dependencies[extensionName] = extensionVersion;
         });
         const json = JSON.stringify(assemblyJsonRawContent, undefined, 2);
-        await utilAsync.FS.writeFile(assemblyPackageJsonPath, json);
+        await fs.writeFile(assemblyPackageJsonPath, json);
     }
 
     async symlink(extension: IExtension): Promise<void> {
@@ -159,15 +177,15 @@ export class Extensions {
 
                 // source folder
                 const sourceFolder = path.resolve(extension.clonedDir, folder);
-                const dest = path.resolve(this.packagesFolder, `@che-${path.basename(sourceFolder)}`);
-                console.log(`Creating symlink from ${sourceFolder} to ${dest}`);
-                await utilAsync.FS.symlink(sourceFolder, dest);
+                const dest = path.resolve(this.packagesFolder, `${Extensions.PREFIX_PACKAGES_EXTENSIONS}${path.basename(sourceFolder)}`);
+                Logger.info(`Creating symlink from ${sourceFolder} to ${dest}`);
+                await fs.ensureSymlink(sourceFolder, dest);
                 symbolicLinks.push(dest);
             }));
         } else {
-            const dest = path.resolve(this.packagesFolder, `@che-${path.basename(extension.clonedDir)}`);
-            console.log(`Creating symlink from ${extension.clonedDir} to ${dest}`);
-            await utilAsync.FS.symlink(extension.clonedDir, dest);
+            const dest = path.resolve(this.packagesFolder, `${Extensions.PREFIX_PACKAGES_EXTENSIONS}${path.basename(extension.clonedDir)}`);
+            Logger.info(`Creating symlink from ${extension.clonedDir} to ${dest}`);
+            await fs.ensureSymlink(extension.clonedDir, dest);
             symbolicLinks.push(dest);
         }
 
@@ -175,29 +193,20 @@ export class Extensions {
 
     }
 
-    clone(extension: IExtension): void {
-        const regex = /https:\/\/github.com\/.*\/(.*)/gm;
-        const folderDirExp = regex.exec(extension.source);
-        if (!folderDirExp || folderDirExp.length < 1) {
-            throw new Error('Invalid repository name:' + extension.source);
-        }
-        const folderDir = folderDirExp[1];
-
-        const ret = childProcess.spawnSync('git', ['clone', `${extension.source}`, `${folderDir}`], { cwd: this.cheTheiaFolder, stdio: [0, 1, 2] });
-        if (ret.error) {
-            throw new Error(ret.error.message);
-        }
-        extension.clonedDir = path.resolve(this.cheTheiaFolder, folderDir);
-
-        if (extension.checkoutTo) {
-            // need to change checkout
-            childProcess.spawnSync('git', ['checkout', extension.checkoutTo], { cwd: `${extension.clonedDir}`, stdio: [0, 1, 2] });
-        }
-
+    /**
+     * Clone the given extension with the correct branch/tag
+     * @param extension the extension to clone
+     */
+    async clone(extension: IExtension): Promise<void> {
+        const repository = new Repository(extension.source);
+        extension.clonedDir = await repository.clone(this.cheTheiaFolder, repository.getRepositoryName(), extension.checkoutTo);
     }
 
 }
 
+/**
+ * Extension's interface
+ */
 export interface IExtension {
     source: string,
     checkoutTo: string,

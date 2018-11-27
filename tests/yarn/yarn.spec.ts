@@ -9,10 +9,10 @@
  */
 
 import * as fs from "fs";
-import { Exec } from "../../src/exec";
+import { Command } from "../../src/command";
 import { Yarn } from "../../src/yarn";
 
-jest.mock("../../src/exec");
+jest.mock("../../src/command");
 
 describe("Test yarn dependencies", () => {
 
@@ -23,8 +23,8 @@ describe("Test yarn dependencies", () => {
     });
 
     test("invalid output", async () => {
-        (Exec as any).__setCommandOutput(Yarn.YARN_GET_DEPENDENCIES, "error");
-        (Exec as any).__setCommandOutput(Yarn.YARN_GET_CONFIG, '{"type":"log","data":"{}"}');
+        (Command as any).__setExecCommandOutput(Yarn.YARN_GET_DEPENDENCIES, "error");
+        (Command as any).__setExecCommandOutput(Yarn.YARN_GET_CONFIG, '{"type":"log","data":"{}"}');
         try {
             await yarn.getDependencies('foo');
         } catch (e) {
@@ -34,8 +34,8 @@ describe("Test yarn dependencies", () => {
 
     test("invalid config output", async () => {
         const output = fs.readFileSync(__dirname + "/json-list-prod-no-dep.stdout");
-        (Exec as any).__setCommandOutput(Yarn.YARN_GET_DEPENDENCIES, output);
-        (Exec as any).__setCommandOutput(Yarn.YARN_GET_CONFIG, 'error');
+        (Command as any).__setExecCommandOutput(Yarn.YARN_GET_DEPENDENCIES, output);
+        (Command as any).__setExecCommandOutput(Yarn.YARN_GET_CONFIG, 'error');
         try {
             await yarn.getDependencies('foo');
         } catch (e) {
@@ -45,8 +45,8 @@ describe("Test yarn dependencies", () => {
 
     test("module not fond", async () => {
         const output = fs.readFileSync(__dirname + "/json-list-prod-no-dep.stdout");
-        (Exec as any).__setCommandOutput(Yarn.YARN_GET_DEPENDENCIES, output);
-        (Exec as any).__setCommandOutput(Yarn.YARN_GET_CONFIG, '{"type":"log","data":"{}"}');
+        (Command as any).__setExecCommandOutput(Yarn.YARN_GET_DEPENDENCIES, output);
+        (Command as any).__setExecCommandOutput(Yarn.YARN_GET_CONFIG, '{"type":"log","data":"{}"}');
         try {
         await yarn.getDependencies('');
     } catch (e) {
@@ -56,16 +56,16 @@ describe("Test yarn dependencies", () => {
 
     test("one dependency", async () => {
         const output = fs.readFileSync(__dirname + "/json-list-prod-one-dep.stdout");
-        (Exec as any).__setCommandOutput(Yarn.YARN_GET_DEPENDENCIES, output);
-        (Exec as any).__setCommandOutput(Yarn.YARN_GET_CONFIG, '{"type":"log","data":"{}"}');
+        (Command as any).__setExecCommandOutput(Yarn.YARN_GET_DEPENDENCIES, output);
+        (Command as any).__setExecCommandOutput(Yarn.YARN_GET_CONFIG, '{"type":"log","data":"{}"}');
         const dependencyList = await yarn.getDependencies('lodash');
         expect(dependencyList).toEqual(["/tmp/node_modules/depd"]);
     });
 
     test("one dependency duplicated", async () => {
         const output = fs.readFileSync(__dirname + "/json-list-prod-one-dep-duplicate.stdout");
-        (Exec as any).__setCommandOutput(Yarn.YARN_GET_DEPENDENCIES, output);
-        (Exec as any).__setCommandOutput(Yarn.YARN_GET_CONFIG, '{"type":"log","data":"{}"}');
+        (Command as any).__setExecCommandOutput(Yarn.YARN_GET_DEPENDENCIES, output);
+        (Command as any).__setExecCommandOutput(Yarn.YARN_GET_CONFIG, '{"type":"log","data":"{}"}');
         const dependencyList = await yarn.getDependencies('lodash');
         expect(dependencyList).toEqual(["/tmp/node_modules/depd"]);
     });
@@ -74,8 +74,8 @@ describe("Test yarn dependencies", () => {
     test("dependencies with excluding not matching", async () => {
         const customYarn = new Yarn("/tmp", '/tmp', [], ['not-a-dependency']);
         const output = fs.readFileSync(__dirname + "/json-list-prod-webpack.stdout");
-        (Exec as any).__setCommandOutput(Yarn.YARN_GET_DEPENDENCIES, output);
-        (Exec as any).__setCommandOutput(Yarn.YARN_GET_CONFIG, '{"type":"log","data":"{}"}');
+        (Command as any).__setExecCommandOutput(Yarn.YARN_GET_DEPENDENCIES, output);
+        (Command as any).__setExecCommandOutput(Yarn.YARN_GET_CONFIG, '{"type":"log","data":"{}"}');
         const dependencyList = await customYarn.getDependencies('webpack');
         expect(dependencyList.length).toEqual(307);
     });
@@ -83,8 +83,8 @@ describe("Test yarn dependencies", () => {
     test("one dependency with forbidden not matching", async () => {
         const customYarn = new Yarn("/tmp", '/tmp', ['not-a-dependency'], []);
         const output = fs.readFileSync(__dirname + "/json-list-prod-excluded.stdout");
-        (Exec as any).__setCommandOutput(Yarn.YARN_GET_DEPENDENCIES, output);
-        (Exec as any).__setCommandOutput(Yarn.YARN_GET_CONFIG, '{"type":"log","data":"{}"}');
+        (Command as any).__setExecCommandOutput(Yarn.YARN_GET_DEPENDENCIES, output);
+        (Command as any).__setExecCommandOutput(Yarn.YARN_GET_CONFIG, '{"type":"log","data":"{}"}');
         const dependencyList = await customYarn.getDependencies('react');
         expect(dependencyList).toEqual(["/tmp/node_modules/loose-envify", "/tmp/node_modules/js-tokens"]);
     });
@@ -92,8 +92,8 @@ describe("Test yarn dependencies", () => {
     test("one dependency with excluded", async () => {
         const customYarn = new Yarn("/tmp", '/tmp', [], ['js-tokens']);
         const output = fs.readFileSync(__dirname + "/json-list-prod-excluded.stdout");
-        (Exec as any).__setCommandOutput(Yarn.YARN_GET_DEPENDENCIES, output);
-        (Exec as any).__setCommandOutput(Yarn.YARN_GET_CONFIG, '{"type":"log","data":"{}"}');
+        (Command as any).__setExecCommandOutput(Yarn.YARN_GET_DEPENDENCIES, output);
+        (Command as any).__setExecCommandOutput(Yarn.YARN_GET_CONFIG, '{"type":"log","data":"{}"}');
         const dependencyList = await customYarn.getDependencies('react');
         expect(dependencyList).toEqual(["/tmp/node_modules/loose-envify"]);
     });
@@ -101,8 +101,8 @@ describe("Test yarn dependencies", () => {
     test("one dependency with forbidden matching", async () => {
         const customYarn = new Yarn("/tmp", '/tmp', ['js-tokens'], []);
         const output = fs.readFileSync(__dirname + "/json-list-prod-excluded.stdout");
-        (Exec as any).__setCommandOutput(Yarn.YARN_GET_DEPENDENCIES, output);
-        (Exec as any).__setCommandOutput(Yarn.YARN_GET_CONFIG, '{"type":"log","data":"{}"}');
+        (Command as any).__setExecCommandOutput(Yarn.YARN_GET_DEPENDENCIES, output);
+        (Command as any).__setExecCommandOutput(Yarn.YARN_GET_CONFIG, '{"type":"log","data":"{}"}');
         try {
             await customYarn.getDependencies('react');
         } catch (e) {
@@ -113,10 +113,10 @@ describe("Test yarn dependencies", () => {
 
     test("one dependency with custom node_modules folder", async () => {
         const output = fs.readFileSync(__dirname + "/json-list-prod-one-dep.stdout");
-        (Exec as any).__setCommandOutput(Yarn.YARN_GET_DEPENDENCIES, output);
+        (Command as any).__setExecCommandOutput(Yarn.YARN_GET_DEPENDENCIES, output);
 
         const configOutput = fs.readFileSync(__dirname + "/json-config-modules-folder.stdout");
-        (Exec as any).__setCommandOutput(Yarn.YARN_GET_CONFIG, configOutput);
+        (Command as any).__setExecCommandOutput(Yarn.YARN_GET_CONFIG, configOutput);
 
         const dependencyList = await yarn.getDependencies('lodash');
         expect(dependencyList).toEqual(["/node_modules/depd"]);
@@ -124,8 +124,8 @@ describe("Test yarn dependencies", () => {
 
     test("one dependency with children", async () => {
         const output = fs.readFileSync(__dirname + "/json-list-prod-one-dep-children.stdout");
-        (Exec as any).__setCommandOutput(Yarn.YARN_GET_DEPENDENCIES, output);
-        (Exec as any).__setCommandOutput(Yarn.YARN_GET_CONFIG, '{"type":"log","data":"{}"}');
+        (Command as any).__setExecCommandOutput(Yarn.YARN_GET_DEPENDENCIES, output);
+        (Command as any).__setExecCommandOutput(Yarn.YARN_GET_CONFIG, '{"type":"log","data":"{}"}');
         const dependencyList = await yarn.getDependencies('http-errors');
         expect(dependencyList.length).toBe(4);
     });

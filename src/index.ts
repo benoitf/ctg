@@ -35,8 +35,12 @@ const commandArgs = yargs
                 const version = await init.getCurrentVersion();
                 await init.generate();
                 const extensions = new Extensions(process.cwd(), packagesFolder, cheFolder, assemblyFolder, version);
-                await extensions.generate();
+
+                const confDir = path.resolve(__dirname, '../src/conf');
+                const extensionsYamlPath = path.join(confDir, 'extensions.yml');
+                await extensions.generate(extensionsYamlPath);
             } catch (err) {
+                console.log('error is', err);
                 handleError(err);
             }
         },

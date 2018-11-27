@@ -10,26 +10,32 @@
 
 'use strict';
 
-export class Exec {
+/**
+ * Mock of the command class.
+ */
+export class Command {
 
-    // mock any command by providing the output
-    public static __setCommandOutput(command: string, output: string): void {
-        Exec.map.set(command, output);
+    /**
+     * Map between the name of the exec command and the output.
+     */
+    private static readonly execMap: Map<string, string> = new Map();
+
+    // mock any exec command by providing the output
+    public static __setExecCommandOutput(command: string, output: string): void {
+        Command.execMap.set(command, output);
     }
 
     constructor() {
 
     }
 
-    public async run(command: string): Promise<string> {
-        const result = Exec.map.get(command);
+    public async exec(command: string): Promise<string> {
+        const result = Command.execMap.get(command);
         if (result) {
             return Promise.resolve(result);
         } else {
             return Promise.resolve('');
         }
     }
-
-    private static readonly map: Map<string, string> = new Map();
 
 }

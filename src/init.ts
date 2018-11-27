@@ -34,9 +34,7 @@ export class Init {
 
     async generate(): Promise<void> {
         console.log('dirname =', __dirname);
-
         const templateDir = path.resolve(__dirname, '../src/templates');
-
         const packageJsonContent = await Init.readFile(path.join(templateDir, 'assembly-package.mst'));
 
         // generate assembly if does not exists
@@ -50,7 +48,6 @@ export class Init {
         if (!fs.existsSync(this.checkoutFolder)) {
             await Init.mkdir(this.checkoutFolder);
         }
-
     }
 
     foo(): void {

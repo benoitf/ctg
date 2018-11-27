@@ -9,33 +9,33 @@
 **********************************************************************/
 
 import * as cp from 'child_process';
+import { CliError } from './cli-error';
 
 /**
  * Allow to run some commands
  * @author Florent Benoit
  */
-export class Exec {
+export class Command {
 
     constructor(private readonly directory: string) {
 
     }
 
-    public async run(command: string): Promise<string> {
+    public async exec(commandLine: string): Promise<string> {
         return new Promise<string>((resolve, reject) => {
-            const execProcess = cp.exec(command, {
+            const execProcess = cp.exec(commandLine, {
                 cwd: this.directory,
                 maxBuffer: 1024 * 1024
             }, (error, stdout, stderr) => {
                 const exitCode = (execProcess as any).exitCode;
                 if (error) {
-                    reject(new Error('Unable to execute the command ' + command + ': ' + error));
+                    reject(new CliError('Unable to execute the command ' + commandLine + ': ' + error));
                 }
                 if (exitCode !== 0) {
-                    reject(new Error('Invalid exit code ' + exitCode));
+                    reject(new CliError('Invalid exit code ' + exitCode));
                 }
                 resolve(stdout);
             });
         });
     }
-
 }

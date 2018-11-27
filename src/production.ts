@@ -11,14 +11,13 @@ import * as fs from 'fs-extra';
 import { Logger } from './logger';
 import { Yarn } from './yarn';
 import { CliError } from './cli-error';
-import * as utilAsync from './async';
 
 import * as glob from 'glob-promise';
 import * as path from 'path';
-import { Exec } from './exec';
+import { Command } from './command';
 
 /**
- * Generates the plugin assembly (zip file)
+ * Generates the assembly directory, copying only subset of files and cleaning up some folders
  * @author Florent Benoit
  */
 export class Production {
@@ -47,11 +46,11 @@ export class Production {
     private toCopyFiles: string[] = [];
     private static readonly ASSEMBLY_DIRECTORY = path.resolve('examples/assembly');
     private static readonly TARGET_DIRECTORY = 'production';
-    private exec: Exec;
+    private command: Command;
 
     constructor(readonly rootFolder: string, readonly assemblyFolder: string) {
         this.dependencies = [];
-        this.exec = new Exec(Production.TARGET_DIRECTORY);
+        this.command = new Command(Production.TARGET_DIRECTORY);
     }
 
     public async create(): Promise<fs.PathLike> {
@@ -101,7 +100,7 @@ export class Production {
     }
 
     protected async getSize(): Promise<number> {
-        return parseInt(await this.exec.run('du -s -k . | cut -f1'), 10);
+        return parseInt(await this.command.exec('du -s -k . | cut -f1'), 10);
     }
 
     protected async yarnClean() {
@@ -111,7 +110,7 @@ export class Production {
         await fs.copy(path.join(this.rootFolder, 'yarn.lock'), path.join(Production.TARGET_DIRECTORY, 'yarn.lock'));
         await fs.copy(yarnCleanPath, path.join(Production.TARGET_DIRECTORY, '.yarnclean'));
         const before = await this.getSize();
-        const output = await this.exec.run('yarn autoclean --force');
+        const output = await this.command.exec('yarn autoclean --force');
         const after = await this.getSize();
         console.log('freeing ' + (before - after) + ' for yarn clean');
         console.log('cleanup output=', output);
@@ -120,12 +119,12 @@ export class Production {
     protected async cleanupFind() {
         const cleanupFindFolder = path.resolve(__dirname, '../src/conf');
 
-        const cleanupFindContent = await utilAsync.FS.readFile(path.join(cleanupFindFolder, 'cleanup-find'));
-        const exec = new Exec(Production.TARGET_DIRECTORY);
+        const cleanupFindContent = await fs.readFile(path.join(cleanupFindFolder, 'cleanup-find'));
+        const command = new Command(Production.TARGET_DIRECTORY);
         await Promise.all(cleanupFindContent.toString().split('\n').map(async (line) => {
             if (line.length > 0 && !line.startsWith('#')) {
                 const before = await this.getSize();
-                await exec.run(`find . -name ${line} | xargs rm -rf {}`);
+                await command.exec(`find . -name ${line} | xargs rm -rf {}`);
                 const after = await this.getSize();
                 console.log('freeing ' + (before - after) + ' for line ' + line);
 
@@ -137,12 +136,12 @@ export class Production {
     protected async cleanupExact() {
         const cleanupExactFolder = path.resolve(__dirname, '../src/conf');
 
-        const cleanupExactContent = await utilAsync.FS.readFile(path.join(cleanupExactFolder, 'cleanup-exact'));
-        const exec = new Exec(Production.TARGET_DIRECTORY);
+        const cleanupExactContent = await fs.readFile(path.join(cleanupExactFolder, 'cleanup-exact'));
+        const command = new Command(Production.TARGET_DIRECTORY);
         await Promise.all(cleanupExactContent.toString().split('\n').map(async (line) => {
             if (line.length > 0 && !line.startsWith('#')) {
                 const before = await this.getSize();
-                await exec.run(`rm -rf ${line}`);
+                await command.exec(`rm -rf ${line}`);
                 const after = await this.getSize();
                 console.log('freeing ' + (after - before) + ' for line ' + line);
 
@@ -187,7 +186,7 @@ export class Production {
         this.dependencies = (await new Yarn('',
             Production.ASSEMBLY_DIRECTORY,
             Production.FORBIDDEN_PACKAGES,
-            Production.EXCLUDED_PACKAGES).getDependencies('x@eclipse-che/theia-assembly'));
+            Production.EXCLUDED_PACKAGES).getDependencies('@eclipse-che/theia-assembly'));
         return Promise.resolve(true);
     }
 

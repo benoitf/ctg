@@ -9,7 +9,6 @@
 **********************************************************************/
 import * as fs from 'fs-extra';
 import * as path from 'path';
-import * as util from 'util';
 import * as mustache from 'mustache';
 import * as readPkg from 'read-pkg';
 
@@ -18,11 +17,6 @@ import * as readPkg from 'read-pkg';
  * @author Florent Benoit
  */
 export class Init {
-
-    // Convert fs.readFile into Promise version of same
-    private static readFile = util.promisify(fs.readFile);
-    private static writeFile = util.promisify(fs.writeFile);
-    private static mkdir = util.promisify(fs.mkdir);
 
     constructor(readonly rootFolder: string, readonly examplesAssemblyFolder: string, readonly checkoutFolder: string) {
 
@@ -33,21 +27,16 @@ export class Init {
     }
 
     async generate(): Promise<void> {
-        console.log('dirname =', __dirname);
         const templateDir = path.resolve(__dirname, '../src/templates');
-        const packageJsonContent = await Init.readFile(path.join(templateDir, 'assembly-package.mst'));
+        const packageJsonContent = await fs.readFile(path.join(templateDir, 'assembly-package.mst'));
 
         // generate assembly if does not exists
         const rendered = await this.generateAssemblyPackage(packageJsonContent.toString());
-        if (!fs.existsSync(this.examplesAssemblyFolder)) {
-            await Init.mkdir(this.examplesAssemblyFolder);
-        }
-        await Init.writeFile(path.join(this.examplesAssemblyFolder, 'package.json'), rendered);
+        await fs.ensureDir(this.examplesAssemblyFolder);
+        await fs.writeFile(path.join(this.examplesAssemblyFolder, 'package.json'), rendered);
 
         // Generate checkout folder is does not exist
-        if (!fs.existsSync(this.checkoutFolder)) {
-            await Init.mkdir(this.checkoutFolder);
-        }
+        await fs.ensureDir(this.checkoutFolder);
     }
 
     foo(): void {

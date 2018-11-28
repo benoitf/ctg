@@ -45,15 +45,14 @@ export class Production {
     private dependencies: string[] = [];
     private toCopyFiles: string[] = [];
     private static readonly ASSEMBLY_DIRECTORY = path.resolve('examples/assembly');
-    private static readonly TARGET_DIRECTORY = 'production';
     private command: Command;
 
-    constructor(readonly rootFolder: string, readonly assemblyFolder: string) {
+    constructor(readonly rootFolder: string, readonly assemblyFolder: string, readonly productionDirectory: string) {
         this.dependencies = [];
-        this.command = new Command(Production.TARGET_DIRECTORY);
+        this.command = new Command(productionDirectory);
     }
 
-    public async create(): Promise<fs.PathLike> {
+    public async create(): Promise<string> {
 
         Logger.info('🗂  Get dependencies...');
         // get dependencies
@@ -68,24 +67,23 @@ export class Production {
         Logger.info('✂️  Cleaning-up files...');
         await this.cleanup();
 
-        Logger.info(`🎉  Theia production-ready available in ${Production.TARGET_DIRECTORY}.`);
+        Logger.info(`🎉  Theia production-ready available in ${this.productionDirectory}.`);
 
-        return path.join(Production.TARGET_DIRECTORY);
+        return path.resolve(this.productionDirectory);
     }
 
     protected async copyFiles(): Promise<void> {
-        const rootDir = path.resolve('');
-        const assemblyLength = Production.ASSEMBLY_DIRECTORY.length;
-        const rootDirLength = rootDir.length;
+        const assemblyLength = this.assemblyFolder.length;
+        const rootDirLength = this.rootFolder.length;
         await Promise.all(this.toCopyFiles.map((file) => {
 
             let destFile;
-            if (file.startsWith(Production.ASSEMBLY_DIRECTORY)) {
+            if (file.startsWith(this.assemblyFolder)) {
                 destFile = file.substring(assemblyLength);
             } else {
                 destFile = file.substring(rootDirLength);
             }
-            return fs.copy(file, path.join(Production.TARGET_DIRECTORY, destFile));
+            return fs.copy(file, path.join(this.productionDirectory, destFile));
         }));
     }
 
@@ -94,9 +92,8 @@ export class Production {
 
         await this.yarnClean();
         await this.cleanupFind();
-        await this.cleanupExact();
         const sizeAfter = await this.getSize();
-        console.log('Gain size after is :' + (sizeBefore - sizeAfter) + ':');
+        Logger.info('Removed :' + (sizeBefore - sizeAfter) + ' KiB');
     }
 
     protected async getSize(): Promise<number> {
@@ -107,44 +104,22 @@ export class Production {
         const yarnCleanFolder = path.resolve(__dirname, '../src/conf');
         const yarnCleanPath = path.join(yarnCleanFolder, '.yarnclean');
 
-        await fs.copy(path.join(this.rootFolder, 'yarn.lock'), path.join(Production.TARGET_DIRECTORY, 'yarn.lock'));
-        await fs.copy(yarnCleanPath, path.join(Production.TARGET_DIRECTORY, '.yarnclean'));
-        const before = await this.getSize();
+        await fs.copy(path.join(this.rootFolder, 'yarn.lock'), path.join(this.productionDirectory, 'yarn.lock'));
+        const yarnCleanDestPath = path.join(this.productionDirectory, '.yarnclean');
+        await fs.copy(yarnCleanPath, yarnCleanDestPath);
         const output = await this.command.exec('yarn autoclean --force');
-        const after = await this.getSize();
-        console.log('freeing ' + (before - after) + ' for yarn clean');
-        console.log('cleanup output=', output);
+        await fs.remove(yarnCleanDestPath);
+        Logger.info(output);
     }
 
     protected async cleanupFind() {
         const cleanupFindFolder = path.resolve(__dirname, '../src/conf');
 
         const cleanupFindContent = await fs.readFile(path.join(cleanupFindFolder, 'cleanup-find'));
-        const command = new Command(Production.TARGET_DIRECTORY);
+        const command = new Command(this.productionDirectory);
         await Promise.all(cleanupFindContent.toString().split('\n').map(async (line) => {
             if (line.length > 0 && !line.startsWith('#')) {
-                const before = await this.getSize();
                 await command.exec(`find . -name ${line} | xargs rm -rf {}`);
-                const after = await this.getSize();
-                console.log('freeing ' + (before - after) + ' for line ' + line);
-
-            }
-        }));
-
-    }
-
-    protected async cleanupExact() {
-        const cleanupExactFolder = path.resolve(__dirname, '../src/conf');
-
-        const cleanupExactContent = await fs.readFile(path.join(cleanupExactFolder, 'cleanup-exact'));
-        const command = new Command(Production.TARGET_DIRECTORY);
-        await Promise.all(cleanupExactContent.toString().split('\n').map(async (line) => {
-            if (line.length > 0 && !line.startsWith('#')) {
-                const before = await this.getSize();
-                await command.exec(`rm -rf ${line}`);
-                const after = await this.getSize();
-                console.log('freeing ' + (after - before) + ' for line ' + line);
-
             }
         }));
 
@@ -159,14 +134,13 @@ export class Production {
             }
         });
 
-        // ok now, add all files from these dependencies except their sub folder node_modules as we already got them
+        // ok now, add all files from these dependencies
         const globOptions = { nocase: true, nosort: true, nodir: true, dot: true };
         this.toCopyFiles = this.toCopyFiles.concat.apply([],
-            await Promise.all(this.dependencies.map((dependencyDirectory) => {
+            await Promise.all(this.dependencies.map(dependencyDirectory => {
                 return glob.promise('**', Object.assign(globOptions, { cwd: dependencyDirectory }))
                     .then((data) => data.map((name) => path.join(dependencyDirectory, name)));
             })));
-
         // add as well the lib folder
         this.toCopyFiles = this.toCopyFiles.concat(
             await (glob.promise('lib/**', Object.assign(globOptions, { cwd: this.assemblyFolder }))
@@ -177,6 +151,7 @@ export class Production {
                 .then((data) => data.map((name) => path.join(this.assemblyFolder, name)))));
 
         this.toCopyFiles = this.toCopyFiles.concat(path.join(this.assemblyFolder, 'package.json'));
+
         return Promise.resolve(true);
 
     }
